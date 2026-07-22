@@ -1,0 +1,39 @@
+name: Terraform Validation
+
+on:
+  pull_request:
+    paths:
+      - '**/*.tf'
+      - '**/*.tfvars'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/terraform-validation.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.tf'
+      - '**/*.tfvars'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/terraform-validation.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform validate
+        run: |
+          cd environments/dev
+          terraform init -backend=false -input=false
+          terraform validate

@@ -106,6 +106,23 @@ tterraform destroy
 kubectl get deployment ebs-csi-controller -n kube-system
 ```
 
+## Validation for contributors
+
+Before pushing Terraform changes, run the local validation checks:
+
+```bash
+pre-commit install
+pre-commit run --all-files
+```
+
+Or run the helper script directly:
+
+```bash
+./scripts/validate.sh
+```
+
+These checks validate Terraform formatting and configuration syntax for the dev environment.
+
 ## Next steps
 
 Once the platform is running, you can install Argo CD and connect the GitOps application repository to the cluster.

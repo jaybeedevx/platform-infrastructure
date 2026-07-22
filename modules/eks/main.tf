@@ -5,9 +5,9 @@ module "eks" {
   cluster_name    = var.cluster_name
   cluster_version = var.cluster_version
 
-  cluster_endpoint_public_access  = true
-  cluster_endpoint_private_access = true
-  enable_irsa                     = true
+  cluster_endpoint_public_access           = true
+  cluster_endpoint_private_access          = true
+  enable_irsa                              = true
   enable_cluster_creator_admin_permissions = true
 
   vpc_id     = var.vpc_id
@@ -41,9 +41,9 @@ module "eks" {
 
   access_entries = {
     for role in var.aws_auth_roles : role.username => {
-      kubernetes_groups = role.groups
+      kubernetes_groups   = role.groups
       kubernetes_username = role.username
-      principal_arn = role.rolearn
+      principal_arn       = role.rolearn
     }
   }
 

@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: terraform-fmt
+        name: terraform fmt
+        entry: terraform fmt -check -recursive
+        language: system
+        files: \.(tf|tfvars)$
+
+      - id: terraform-validate
+        name: terraform validate
+        entry: bash -c 'cd environments/dev && terraform init -backend=false -input=false && terraform validate'
+        language: system
+        files: \.(tf|tfvars)$
