@@ -27,13 +27,13 @@ module "eks" {
 
   eks_managed_node_group_defaults = {
     ami_type       = "AL2023_x86_64_STANDARD"
-    instance_types = ["t3.small"]
+    instance_types = ["t3.medium"]
   }
 
   eks_managed_node_groups = {
     general = {
-      min_size     = 1
-      max_size     = 3
+      min_size     = 2
+      max_size     = 9
       desired_size = 2
       subnet_ids   = var.private_subnet_ids
     }
