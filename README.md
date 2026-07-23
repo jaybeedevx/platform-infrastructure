@@ -48,20 +48,20 @@ cd /path/to/platform-infrastructure/environments/dev
 
 Edit the values in [environments/dev/terraform.tfvars](environments/dev/terraform.tfvars) if you need to change the cluster name, region, or Kubernetes version.
 
-### 3. Bootstrap the Terraform backend (first run only)
+### 3. Bootstrap the Terraform backend with Terraform (first run only)
 
-If the S3 backend bucket for Terraform state does not exist yet, create it first:
+The backend bucket must exist before the dev backend can initialize. Create it from the dedicated bootstrap configuration:
 
 ```bash
-aws s3api create-bucket --bucket my-platform-terraform-state-use1 --region us-east-1
-aws s3api put-bucket-versioning --bucket my-platform-terraform-state-use1 --versioning-configuration Status=Enabled
-aws s3api put-bucket-encryption --bucket my-platform-terraform-state-use1 --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
-aws s3api put-public-access-block --bucket my-platform-terraform-state-use1 --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+cd /path/to/platform-infrastructure/environments/bootstrap
+terraform init
+terraform apply
 ```
 
-Then initialize Terraform:
+Then initialize the dev environment:
 
 ```bash
+cd ../dev
 terraform init -reconfigure
 ```
 

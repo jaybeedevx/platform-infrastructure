@@ -19,7 +19,7 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "Kubernetes version for the EKS cluster"
   type        = string
-  default     = "1.31"
+  default     = "1.35"
 }
 
 variable "vpc_cidr" {
@@ -64,8 +64,3 @@ variable "admin_role_arn" {
   default     = ""
 }
 
-variable "terraform_state_bucket_name" {
-  description = "Name of the S3 bucket used for Terraform state"
-  type        = string
-  default     = "my-platform-terraform-state-use1"
-}
