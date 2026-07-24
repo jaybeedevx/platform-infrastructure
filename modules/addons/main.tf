@@ -4,6 +4,8 @@ resource "helm_release" "aws_load_balancer_controller" {
   repository = "https://aws.github.io/eks-charts"
   chart      = "aws-load-balancer-controller"
   version    = "1.7.1"
+  wait       = true
+  timeout    = 300 # seconds, adjust as needed
 
   set {
     name  = "clusterName"
@@ -143,6 +145,8 @@ resource "helm_release" "external_secrets" {
   chart            = "external-secrets"
   repository       = "https://charts.external-secrets.io"
   version          = "0.9.11"
+  depends_on       = [helm_release.aws_load_balancer_controller]
+
   set {
     name  = "serviceAccount.create"
     value = "true"
@@ -160,10 +164,41 @@ resource "helm_release" "external_secrets" {
 # 4. Argo CD
 resource "helm_release" "argocd" {
   name             = "argocd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
   namespace        = "argocd"
   create_namespace = true
-  chart            = "argo-cd"
-  repository       = "https://argoproj.github.io/argo-helm"
-  version          = "6.7.0"
-  values           = fileexists("${path.module}/values/argocd.yaml") ? [file("${path.module}/values/argocd.yaml")] : []
+  version          = "10.2.1"
+
+  values = [yamlencode({
+
+    global = {
+      image = {
+        tag = "v3.4.5" # specify desired version
+      }
+    }
+    # Admin user is enabled by default; we DO NOT disable it
+    configs = {
+      secret = {
+        createSecret = true # Generate a random admin password
+      }
+    }
+    controller = {
+      serviceAccount = {
+        annotations = {
+          "eks.amazonaws.com/role-arn" = var.argocd_irsa_role_arn
+        }
+      }
+    }
+    server = {
+      service = {
+        type = "LoadBalancer" # Required for NLB
+        annotations = {
+          "service.beta.kubernetes.io/aws-load-balancer-internal" = "true"
+          "service.beta.kubernetes.io/aws-load-balancer-type"     = "nlb"
+        }
+      }
+      # adminUser section removed – admin is enabled by default
+    }
+  })]
 }

@@ -33,3 +33,14 @@ module "lb_controller_irsa" {
     "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
   ]
 }
+
+module "argocd_irsa" {
+  source = "./irsa-role"
+
+  name                 = "argocd"
+  namespace            = "argocd"
+  service_account_name = "argocd-application-controller"
+  oidc_provider_arn    = var.oidc_provider_arn
+  issuer_url           = var.cluster_oidc_issuer_url
+  policy_arns          = [] # Empty for now; add S3 policy later if using private Helm repos
+}

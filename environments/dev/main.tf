@@ -42,8 +42,10 @@ module "eks" {
 module "iam" {
   source = "../../modules/iam"
 
-  oidc_provider_arn = module.eks.oidc_provider_arn
-  oidc_provider_url = module.eks.oidc_provider_url
+  oidc_provider_arn       = module.eks.oidc_provider_arn
+  oidc_provider_url       = module.eks.oidc_provider_url
+  cluster_oidc_issuer_url = module.eks.cluster_oidc_issuer_url
+
 }
 
 module "addons" {
@@ -55,6 +57,7 @@ module "addons" {
   lb_controller_irsa_role_arn = module.iam.lb_controller_irsa_role_arn
   oidc_provider_arn           = module.eks.oidc_provider_arn
   oidc_provider_url           = module.eks.oidc_provider_url
+  argocd_irsa_role_arn        = module.iam.argocd_irsa_role_arn
 
   depends_on = [module.eks, module.iam]
 }

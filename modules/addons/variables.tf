@@ -27,3 +27,8 @@ variable "oidc_provider_url" {
   description = "The issuer URL of the EKS OIDC provider"
   type        = string
 }
+
+variable "argocd_irsa_role_arn" {
+  description = "ARN of the IRSA role for the Argo CD application controller"
+  type        = string
+}

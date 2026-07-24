@@ -9,3 +9,7 @@ output "efs_csi_irsa_role_arn" {
 output "lb_controller_irsa_role_arn" {
   value = module.lb_controller_irsa.role_arn
 }
+
+output "argocd_irsa_role_arn" {
+  value = module.argocd_irsa.role_arn
+}
