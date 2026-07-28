@@ -1,0 +1,97 @@
+name: "Terraform Apply"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'environments/dev/**'
+      - 'modules/**'
+      - '.github/workflows/terraform-apply.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        default: 'staging'
+        options:
+          - staging
+          - production
+
+env:
+  TF_VERSION: "1.6.5"
+  AWS_REGION: "us-east-1"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  ###########################
+  # DEV – auto on push
+  ###########################
+  dev-apply:
+    name: "Dev – Plan & Apply"
+    if: github.event_name == 'push'   # only for code merges
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: environments/dev
+    steps:
+      - uses: actions/checkout@v5
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GithubActionsDeployer
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=dev/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -out=plan.tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve plan.tfplan
+
+  ###########################################################
+  # STAGING & PRODUCTION – manual trigger with environment input
+  ###########################################################
+  manual-deploy:
+    name: "${{ github.event.inputs.environment }} – Plan & Apply"
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}   # selects the environment (with protection rules)
+    defaults:
+      run:
+        working-directory: environments/${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GithubActionsDeployer
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -out=plan.tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve plan.tfplan
