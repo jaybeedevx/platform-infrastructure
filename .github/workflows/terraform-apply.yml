@@ -1,51 +1,122 @@
+# .github/workflows/terraform-apply.yml
+# Runs on merge to main: plan + apply with environment approval gate.
+# Supports dev / staging / prod. On push, auto-detects which environment(s)
+# changed. Can also be triggered manually via workflow_dispatch, choosing
+# exactly one environment to target.
 name: "Terraform Apply"
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - 'environments/dev/**'
-      - 'modules/**'
-      - '.github/workflows/terraform-apply.yml'
+      - "environments/dev/**"
+      - "environments/staging/**"
+      - "environments/prod/**"
+      - "modules/**"
+      - ".github/workflows/terraform-apply.yml"
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy'
+        description: "Environment to deploy"
         required: true
         type: choice
-        default: 'staging'
         options:
+          - dev
           - staging
-          - production
+          - prod
+
+permissions:
+  id-token: write   # required for OIDC -> AWS
+  contents: read
 
 env:
   TF_VERSION: "1.6.5"
   AWS_REGION: "us-east-1"
-
-permissions:
-  id-token: write
-  contents: read
+  TF_VAR_aws_region: "us-east-1"
 
 jobs:
-  ###########################
-  # DEV – auto on push
-  ###########################
-  dev-apply:
-    name: "Dev – Plan & Apply"
-    if: github.event_name == 'push'   # only for code merges
+  # -------------------------------------------------------------------------
+  # Work out which environment(s) this run applies to.
+  #   - workflow_dispatch: exactly the environment the user picked.
+  #   - push: whichever environments/<env>/** changed. If modules/** changed,
+  #     treat that as affecting ALL environments, since shared modules are
+  #     consumed by every environment's root config.
+  # -------------------------------------------------------------------------
+  detect:
+    name: "Detect target environment(s)"
     runs-on: ubuntu-latest
-    environment: dev
+    outputs:
+      environments: ${{ steps.set.outputs.environments }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            dev:
+              - 'environments/dev/**'
+            staging:
+              - 'environments/staging/**'
+            prod:
+              - 'environments/prod/**'
+            modules:
+              - 'modules/**'
+
+      - name: Build environment list
+        id: set
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo 'environments=["${{ inputs.environment }}"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ steps.filter.outputs.modules }}" = "true" ]; then
+            # Shared module change: (re)plan/apply every environment.
+            echo 'environments=["dev","staging","prod"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          envs="[]"
+          [ "${{ steps.filter.outputs.dev }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["dev"]')
+          [ "${{ steps.filter.outputs.staging }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["staging"]')
+          [ "${{ steps.filter.outputs.prod }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["prod"]')
+
+          echo "environments=$envs" >> "$GITHUB_OUTPUT"
+
+      - name: Show detected environments
+        run: echo "Targeting: ${{ steps.set.outputs.environments }}"
+
+  # -------------------------------------------------------------------------
+  # Plan every targeted environment in parallel. Each leg plans against its
+  # own environments/<env> directory and its own state key.
+  # -------------------------------------------------------------------------
+  plan:
+    name: "Plan (${{ matrix.env }})"
+    needs: detect
+    if: needs.detect.outputs.environments != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ fromJSON(needs.detect.outputs.environments) }}
     defaults:
       run:
-        working-directory: environments/dev
+        working-directory: environments/${{ matrix.env }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: aws-actions/configure-aws-credentials@v6
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: hashicorp/setup-terraform@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
@@ -53,45 +124,111 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=dev/terraform.tfstate" \
+            -backend-config="key=${{ matrix.env }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
       - name: Terraform Plan
-        run: terraform plan -no-color -out=plan.tfplan
+        id: plan
+        run: |
+          set +e
+          terraform plan -no-color -input=false -out=tfplan -detailed-exitcode
+          echo "$?" > plan_exitcode.txt
+          exit 0
 
-      - name: Terraform Apply
-        run: terraform apply -auto-approve plan.tfplan
+      - name: Show plan
+        run: terraform show -no-color tfplan | tee plan_output.txt
 
-  ###########################################################
-  # STAGING & PRODUCTION – manual trigger with environment input
-  ###########################################################
-  manual-deploy:
-    name: "${{ github.event.inputs.environment }} – Plan & Apply"
-    if: github.event_name == 'workflow_dispatch'
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.env }}
+          path: |
+            environments/${{ matrix.env }}/tfplan
+            environments/${{ matrix.env }}/plan_output.txt
+            environments/${{ matrix.env }}/plan_exitcode.txt
+          retention-days: 5
+
+      - name: Fail if plan errored
+        run: |
+          code=$(cat plan_exitcode.txt)
+          if [ "$code" = "1" ]; then
+            echo "Terraform plan failed for ${{ matrix.env }}"
+            exit 1
+          fi
+
+  # -------------------------------------------------------------------------
+  # Apply each targeted environment. Gated by a GitHub Environment matching
+  # matrix.env -- configure required reviewers per-environment in repo
+  # Settings > Environments (e.g. prod requires approval, dev does not).
+  # -------------------------------------------------------------------------
+  apply:
+    name: "Apply (${{ matrix.env }})"
+    needs: [detect, plan]
+    if: needs.detect.outputs.environments != '[]'
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}   # selects the environment (with protection rules)
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ fromJSON(needs.detect.outputs.environments) }}
+    environment:
+      name: ${{ matrix.env }}   # dev / staging / prod -- protection rules configured per-environment in GitHub
     defaults:
       run:
-        working-directory: environments/${{ github.event.inputs.environment }}
+        working-directory: environments/${{ matrix.env }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: aws-actions/configure-aws-credentials@v6
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ matrix.env }}
+          path: environments/${{ matrix.env }}
+
+      - name: Check whether there are changes to apply
+        id: check
+        run: |
+          code=$(cat plan_exitcode.txt)
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = "0" ]; then
+            echo "No changes for ${{ matrix.env }} -- skipping apply."
+          fi
+
+      - name: Configure AWS credentials via OIDC
+        if: steps.check.outputs.exitcode == '2'
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: hashicorp/setup-terraform@v4
+
+      - name: Setup Terraform
+        if: steps.check.outputs.exitcode == '2'
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Init
+        if: steps.check.outputs.exitcode == '2'
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate" \
+            -backend-config="key=${{ matrix.env }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
-      - name: Terraform Plan
-        run: terraform plan -no-color -out=plan.tfplan
-
       - name: Terraform Apply
-        run: terraform apply -auto-approve plan.tfplan
+        if: steps.check.outputs.exitcode == '2'
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo "### Terraform Apply — ${{ matrix.env }}"
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- Triggered by: ${{ github.actor }}"
+            echo "- Plan exit code: ${{ steps.check.outputs.exitcode }} (0=no changes, 2=applied)"
+            echo "- Status: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
