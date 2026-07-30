@@ -129,6 +129,9 @@ jobs:
       fail-fast: false
       matrix:
         env: ${{ fromJSON(needs.detect.outputs.environments) }}
+    concurrency:
+      group: terraform-apply-${{ matrix.env }}
+      cancel-in-progress: false
     environment:
       name: ${{ matrix.env }}   # uses GitHub Environment: dev, staging, production
     defaults:

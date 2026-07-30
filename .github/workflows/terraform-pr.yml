@@ -5,7 +5,7 @@ on:
     paths:
       - "environments/dev/**"
       - "environments/staging/**"
-      - "environments/prod/**"
+      - "environments/production/**"
       - "modules/**"
       - ".github/workflows/terraform-pr.yml"
 
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env: [dev, staging, prod]
+        env: [dev, staging, production]
     defaults:
       run:
         working-directory: environments/${{ matrix.env }}
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env: [dev, staging, prod]
+        env: [dev, staging, production]
     defaults:
       run:
         working-directory: environments/${{ matrix.env }}
