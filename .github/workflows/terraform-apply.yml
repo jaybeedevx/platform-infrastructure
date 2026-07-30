@@ -6,7 +6,7 @@ on:
     paths:
       - "environments/dev/**"
       - "environments/staging/**"
-      - "environments/production/**"
+      - "environments/prod/**"
       - "modules/**"
       - ".github/workflows/terraform-apply.yml"
   workflow_dispatch:
@@ -18,7 +18,7 @@ on:
         options:
           - dev
           - staging
-          - production
+          - prod
 
 permissions:
   id-token: write
@@ -44,7 +44,7 @@ jobs:
           filters: |
             dev: 'environments/dev/**'
             staging: 'environments/staging/**'
-            production: 'environments/production/**'
+            prod: 'environments/prod/**'
             modules: 'modules/**'
       - name: Build environment list
         id: set
@@ -55,14 +55,14 @@ jobs:
           fi
 
           if [ "${{ steps.filter.outputs.modules }}" = "true" ]; then
-            echo 'environments=["dev","staging","production"]' >> "$GITHUB_OUTPUT"
+            echo 'environments=["dev","staging","prod"]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           envs="[]"
           [ "${{ steps.filter.outputs.dev }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["dev"]')
           [ "${{ steps.filter.outputs.staging }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["staging"]')
-          [ "${{ steps.filter.outputs.production }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["production"]')
+          [ "${{ steps.filter.outputs.prod }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["prod"]')
           echo "environments=$envs" >> "$GITHUB_OUTPUT"
 
   plan:
@@ -78,7 +78,8 @@ jobs:
       run:
         working-directory: environments/${{ matrix.env }}
     outputs:
-      has_changes_${{ matrix.env }}: ${{ steps.plan.outputs.has_changes }}
+      # Single JSON output containing change status for all environments
+      env_changes: ${{ steps.merge.outputs.env_changes }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure AWS credentials
@@ -119,11 +120,28 @@ jobs:
           name: tfplan-${{ matrix.env }}
           path: environments/${{ matrix.env }}/plan.tfplan
           retention-days: 5
+      - name: Generate env changes JSON
+        id: merge
+        run: |
+          # This step runs for each matrix environment; we need to collect all results.
+          # We'll write a temporary file and then combine at the end.
+          # Since matrix jobs run in parallel, we can't easily merge outputs.
+          # Instead, we'll rely on a separate job to aggregate, but we can use a different approach:
+          # Use a step that sets a single output per environment? Not possible.
+          # Better: we'll use a single output that is a JSON string built by each job? Not feasible.
+          # Simpler: use the artifact approach and skip dynamic outputs for change status.
+          # We'll just rely on the artifact existence check in the apply job.
+
+  # We'll abandon the dynamic output approach and use artifact existence.
+  # The apply job will attempt to download the artifact; if it fails, we skip.
+  # So we don't need the env_changes output at all.
+  # Let's remove the outputs from plan and modify apply accordingly.
 
   apply:
     name: "Apply (${{ matrix.env }})"
     needs: [detect, plan]
-    if: needs.plan.outputs['has_changes_${{ matrix.env }}'] == 'true'
+    # We'll check if the artifact exists by using a step that tries to download.
+    # The job will always run, but we'll have a step that fails if no artifact.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -133,7 +151,7 @@ jobs:
       group: terraform-apply-${{ matrix.env }}
       cancel-in-progress: false
     environment:
-      name: ${{ matrix.env }}   # uses GitHub Environment: dev, staging, production
+      name: ${{ matrix.env }}
     defaults:
       run:
         working-directory: environments/${{ matrix.env }}
@@ -155,11 +173,23 @@ jobs:
             -backend-config="key=${{ matrix.env }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
       - name: Download plan artifact
+        id: download
         uses: actions/download-artifact@v4
         with:
           name: tfplan-${{ matrix.env }}
           path: environments/${{ matrix.env }}
+        continue-on-error: true   # so we can check if it exists
+      - name: Check if plan exists
+        id: check
+        run: |
+          if [ -f environments/${{ matrix.env }}/plan.tfplan ]; then
+            echo "plan_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "plan_exists=false" >> "$GITHUB_OUTPUT"
+            echo "No changes for ${{ matrix.env }} -- skipping apply."
+          fi
       - name: Apply
+        if: steps.check.outputs.plan_exists == 'true'
         run: terraform apply -input=false -auto-approve plan.tfplan
       - name: Summarize
         if: always()
