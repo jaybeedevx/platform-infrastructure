@@ -1,6 +1,6 @@
 locals {
   common_tags = {
-    Environment = "dev"
+    Environment = "prod"
     ManagedBy   = "Terraform"
     Project     = "platform-infra-prod"
   }
