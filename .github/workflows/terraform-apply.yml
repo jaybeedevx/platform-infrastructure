@@ -87,7 +87,8 @@ jobs:
           echo "environments=$envs" >> "$GITHUB_OUTPUT"
 
       - name: Show detected environments
-        run: echo "Targeting: ${{ steps.set.outputs.environments }}"
+        run: |
+          echo "Targeting: ${{ steps.set.outputs.environments }}"
 
   # -------------------------------------------------------------------------
   # Plan every targeted environment in parallel. Each leg plans against its
@@ -231,4 +232,4 @@ jobs:
             echo "- Triggered by: ${{ github.actor }}"
             echo "- Plan exit code: ${{ steps.check.outputs.exitcode }} (0=no changes, 2=applied)"
             echo "- Status: ${{ job.status }}"
-          } >> "$GITHUB_STEP_SUMMARY"# This is a test to refresh the name
+          } >> "$GITHUB_STEP_SUMMARY"
