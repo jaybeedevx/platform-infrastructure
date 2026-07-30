@@ -11,7 +11,7 @@ on:
     paths:
       - "environments/dev/**"
       - "environments/staging/**"
-      - "environments/prod/**"
+      - "environments/production/**"
       - "modules/**"
       - ".github/workflows/terraform-apply.yml"
   workflow_dispatch:
