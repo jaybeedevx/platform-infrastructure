@@ -1,6 +1,6 @@
 # .github/workflows/terraform-apply.yml
 # Runs on merge to main: plan + apply with environment approval gate.
-# Supports dev / staging / prod. On push, auto-detects which environment(s)
+# Supports dev / staging / production. On push, auto-detects which environment(s)
 # changed. Can also be triggered manually via workflow_dispatch, choosing
 # exactly one environment to target.
 name: "Terraform Apply"
@@ -11,7 +11,7 @@ on:
     paths:
       - "environments/dev/**"
       - "environments/staging/**"
-      - "environments/production/**"
+      - "environments/productionuction/**"
       - "modules/**"
       - ".github/workflows/terraform-apply.yml"
   workflow_dispatch:
@@ -23,7 +23,7 @@ on:
         options:
           - dev
           - staging
-          - prod
+          - production
 
 permissions:
   id-token: write   # required for OIDC -> AWS
@@ -60,8 +60,8 @@ jobs:
               - 'environments/dev/**'
             staging:
               - 'environments/staging/**'
-            prod:
-              - 'environments/prod/**'
+            production:
+              - 'environments/production/**'
             modules:
               - 'modules/**'
 
@@ -75,14 +75,14 @@ jobs:
 
           if [ "${{ steps.filter.outputs.modules }}" = "true" ]; then
             # Shared module change: (re)plan/apply every environment.
-            echo 'environments=["dev","staging","prod"]' >> "$GITHUB_OUTPUT"
+            echo 'environments=["dev","staging","production"]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           envs="[]"
           [ "${{ steps.filter.outputs.dev }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["dev"]')
           [ "${{ steps.filter.outputs.staging }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["staging"]')
-          [ "${{ steps.filter.outputs.prod }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["prod"]')
+          [ "${{ steps.filter.outputs.production }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["production"]')
 
           echo "environments=$envs" >> "$GITHUB_OUTPUT"
 
@@ -163,7 +163,7 @@ jobs:
   # -------------------------------------------------------------------------
   # Apply each targeted environment. Gated by a GitHub Environment matching
   # matrix.env -- configure required reviewers per-environment in repo
-  # Settings > Environments (e.g. prod requires approval, dev does not).
+  # Settings > Environments (e.g. production requires approval, dev does not).
   # -------------------------------------------------------------------------
   apply:
     name: "Apply (${{ matrix.env }})"
@@ -175,7 +175,7 @@ jobs:
       matrix:
         env: ${{ fromJSON(needs.detect.outputs.environments) }}
     environment:
-      name: ${{ matrix.env }}   # dev / staging / prod -- protection rules configured per-environment in GitHub
+      name: ${{ matrix.env }}   # dev / staging / production -- protection rules configured per-environment in GitHub
     defaults:
       run:
         working-directory: environments/${{ matrix.env }}
