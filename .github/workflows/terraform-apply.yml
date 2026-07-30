@@ -231,4 +231,4 @@ jobs:
             echo "- Triggered by: ${{ github.actor }}"
             echo "- Plan exit code: ${{ steps.check.outputs.exitcode }} (0=no changes, 2=applied)"
             echo "- Status: ${{ job.status }}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY"# This is a test to refresh the name
