@@ -3,97 +3,134 @@ name: "Terraform PR Check"
 on:
   pull_request:
     paths:
-      - 'environments/dev/**'
-      - 'modules/**'
-      - '.github/workflows/terraform-pr.yml'
+      - "environments/dev/**"
+      - "environments/staging/**"
+      - "environments/prod/**"
+      - "modules/**"
+      - ".github/workflows/terraform-pr.yml"
+
+concurrency:
+  group: terraform-pr-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
 
 env:
   TF_VERSION: "1.6.5"
-  AWS_REGION: "us-east-1"                     
-  TF_WORKING_DIR: environments/dev
-  TF_VAR_aws_region: "us-east-1"              
-  # Avoid storing AWS keys; use GitHub OIDC (see below)
-
-permissions:
-  id-token: write        # required for OIDC
-  contents: read
-  pull-requests: write   # to post plan comment
+  AWS_REGION: "us-east-1"
+  TF_VAR_aws_region: "us-east-1"
 
 jobs:
-  terraform-checks:
-    name: "Terraform Lint, Validate, Security Scan & Plan"
+  lint:
+    name: "Lint & Validate"
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, staging, prod]
     defaults:
       run:
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
+        working-directory: environments/${{ matrix.env }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
+      - uses: actions/checkout@v4
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Terraform Format
-        id: fmt
+      - name: Format
         run: terraform fmt -check -recursive
-        continue-on-error: true
-
-      - name: Terraform Init
-        run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
-
-      - name: Terraform Validate
+      - name: Init (no backend)
+        run: terraform init -backend=false
+      - name: Validate
         run: terraform validate
 
-      - name: Run TFSec (Security Scan)
-        uses: aquasecurity/tfsec-pr-commenter-action@v1.3.1
+  security:
+    name: "Security Scan (Trivy)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy
+        uses: aquasecurity/trivy-action@master
         with:
-          tfsec_args: --concise-output
-          working_directory: ${{ env.TF_WORKING_DIR }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          scan-type: "config"
+          scan-ref: "environments/"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
 
-      - name: Terraform Plan
-        id: plan
+  plan:
+    name: "Plan (${{ matrix.env }})"
+    needs: [lint, security]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, staging, prod]
+    defaults:
+      run:
+        working-directory: environments/${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: Init
         run: |
-          terraform plan -no-color -out=plan.tfplan
-          echo "PLAN_OUTPUT<<EOF" >> $GITHUB_ENV
-          terraform show -no-color plan.tfplan >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      - name: Post Plan to PR
-        uses: actions/github-script@v9
-        if: github.event_name == 'pull_request'
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ matrix.env }}/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+      - name: Plan
+        id: plan
+        continue-on-error: true
+        run: |
+          terraform plan -no-color -input=false -out=plan.tfplan | tee plan_output.txt
+      - name: Post plan comment
+        uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const output = process.env.PLAN_OUTPUT;
-            const comment = `### Terraform Plan :clipboard:\n\n<details><summary>Show Plan</summary>\n\n\`\`\`\n${output}\n\`\`\`\n</details>`;
+            // This script will post/update a comment with the plan output.
+            // To handle multiple environments, we append the environment name.
+            const fs = require('fs');
+            const envName = '${{ matrix.env }}';
+            const outputFile = `environments/${envName}/plan_output.txt`;
+            let output;
+            try {
+              output = fs.readFileSync(outputFile, 'utf8');
+            } catch (e) {
+              output = `Plan for ${envName} could not be generated.`;
+            }
+            const truncated = output.length > 60000 ? output.substring(0,60000) + '\n\n... (truncated)' : output;
+            const marker = `<!-- terraform-pr-plan-${envName} -->`;
+            const body = `${marker}\n### Terraform Plan — ${envName}\n\n<details><summary>Show Plan</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n</details>\n\n<sub>Commit: \`${{ github.sha }}\`</sub>`;
+
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            const botComment = comments.find(comment => comment.user.type === 'Bot' && comment.body.includes('Terraform Plan'));
-            if (botComment) {
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: comment
+                comment_id: existing.id,
+                body,
               });
             } else {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body: comment
+                body,
               });
             }
+      - name: Fail if plan failed
+        if: steps.plan.outcome != 'success'
+        run: exit 1
