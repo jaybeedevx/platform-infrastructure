@@ -13,7 +13,7 @@ variable "terraform_role_arn" {
 variable "cluster_name" {
   description = "Name of the EKS cluster"
   type        = string
-  default     = "dev-platform"
+  default     = "prod-platform"
 }
 
 variable "cluster_version" {

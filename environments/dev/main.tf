@@ -2,7 +2,7 @@ locals {
   common_tags = {
     Environment = "dev"
     ManagedBy   = "Terraform"
-    Project     = "platform-infra-dev"
+    Project     = "platform-infra-prod"
   }
 
   aws_auth_roles = var.admin_role_arn != "" ? [
