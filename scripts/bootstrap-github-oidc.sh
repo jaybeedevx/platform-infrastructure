@@ -93,16 +93,10 @@ rm -f "${TRUST_POLICY_FILE}"
 # ---------------------------------------------------------------------------
 # 4. Inline permissions policy: Terraform state (S3 + DynamoDB lock) access
 # ---------------------------------------------------------------------------
+# The Terraform backend uses S3 native locking (use_lockfile = true), so this
+# role only needs object-level access to the state bucket -- no DynamoDB table.
 STATE_BUCKET="my-platform-terraform-state-use1"
-LOCK_TABLE_NAME="YOUR-LOCK-TABLE-NAME"   # <-- replace with your actual DynamoDB lock table
 INLINE_POLICY_NAME="terraform-state-access"
-
-if [ "${LOCK_TABLE_NAME}" = "YOUR-LOCK-TABLE-NAME" ]; then
-  echo ""
-  echo "WARNING: LOCK_TABLE_NAME is still the placeholder value."
-  echo "Edit this script and set it to your actual DynamoDB lock table name"
-  echo "before the dynamodb:* statement below will resolve to a real table."
-fi
 
 INLINE_POLICY_FILE="$(mktemp)"
 cat > "${INLINE_POLICY_FILE}" <<EOF
@@ -127,16 +121,6 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
         },
         {
             "Effect": "Allow",
-            "Action": [
-                "dynamodb:GetItem",
-                "dynamodb:PutItem",
-                "dynamodb:DeleteItem",
-                "dynamodb:DescribeTable"
-            ],
-            "Resource": "arn:aws:dynamodb:us-east-1:${AWS_ACCOUNT_ID}:table/${LOCK_TABLE_NAME}"
-        },
-        {
-            "Effect": "Allow",
             "Action": "iam:GetRole",
             "Resource": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}"
         }
@@ -158,9 +142,9 @@ echo ""
 echo "== Done =="
 echo "OIDC provider: ${OIDC_PROVIDER_ARN}"
 echo "Role ARN:      ${ROLE_ARN}"
-echo "Inline policy: ${INLINE_POLICY_NAME} (Terraform state S3 + DynamoDB access only)"
+echo "Inline policy: ${INLINE_POLICY_NAME} (Terraform state S3 access only)"
 echo ""
-echo "NOTE: this role can now read/write your Terraform state and lock table,"
+echo "NOTE: this role can now read/write your Terraform state (S3 native locking),"
 echo "but has NO permissions yet to actually manage EKS/VPC/etc. resources."
 echo "Add further scoped statements (or attach managed/customer policies) for"
 echo "whatever your workflows provision -- do not attach AdministratorAccess."

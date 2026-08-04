@@ -13,7 +13,7 @@ variable "terraform_role_arn" {
 variable "cluster_name" {
   description = "Name of the EKS cluster"
   type        = string
-  default     = "prod-platform"
+  default     = "staging-platform"
 }
 
 variable "cluster_version" {
@@ -59,8 +59,7 @@ variable "enable_flow_logs" {
 }
 
 variable "admin_role_arn" {
-  description = "Optional admin role ARN to map into the aws-auth configmap"
+  description = "Optional admin role ARN to map into the cluster"
   type        = string
   default     = ""
 }
-

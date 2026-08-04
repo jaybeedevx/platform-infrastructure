@@ -64,8 +64,3 @@ variable "admin_role_arn" {
   default     = ""
 }
 
-variable "argocd_irsa_role_arn" {
-  description = "ARN of the IRSA role for the Argo CD application controller"
-  type        = string
-  default     = ""
-}

@@ -1,6 +1,6 @@
 # Platform Infrastructure
 
-This repository provisions the AWS EKS platform and the GitOps tooling layer that applications build on top of, using Terraform. It uses a multi-environment layout (`dev`, `production`) that shares a set of reusable modules, a dedicated `bootstrap` environment for the S3 state backend, and GitHub Actions CI/CD wired up through an OIDC role.
+This repository provisions the AWS EKS platform and the GitOps tooling layer that applications build on top of, using Terraform. It uses a multi-environment layout (`dev`, `staging`, `production`) that shares a set of reusable modules, a dedicated `bootstrap` environment for the S3 state backend, and GitHub Actions CI/CD wired up through an OIDC role.
 
 ## What this platform includes
 
@@ -31,6 +31,7 @@ This repository provisions the AWS EKS platform and the GitOps tooling layer tha
 ├── environments/
 │   ├── bootstrap/        # S3 bucket for the remote Terraform state backend
 │   ├── dev/              # dev environment entrypoint (VPC + EKS + IAM + add-ons)
+│   ├── staging/          # staging environment entrypoint (same modules)
 │   └── production/       # production environment entrypoint (same modules)
 ├── modules/
 │   ├── vpc/              # VPC, subnets, NAT gateway, routing, optional flow logs
@@ -39,6 +40,9 @@ This repository provisions the AWS EKS platform and the GitOps tooling layer tha
 │   │   └── irsa-role/    # reusable IRSA role module (OIDC trust + attached policies)
 │   └── addons/           # Helm releases: LB controller, CSI drivers, Metrics Server, cert-manager,
 │                         # External Secrets, Argo CD
+├── docs/
+│   ├── ci-cd.md              # pipeline runbook: PR evidence → controlled apply
+│   └── production-setup.md   # production runbook: prereqs, approval gate, promotion
 ├── scripts/
 │   ├── validate.sh              # local fmt + validate checks
 │   └── bootstrap-github-oidc.sh # one-time GitHub OIDC provider + IAM role setup
@@ -125,7 +129,7 @@ terraform init -reconfigure
 terraform apply
 ```
 
-The Terraform state backend, IAM access entries, and tag values differ per environment. See the [Notes](#notes) section below for known gaps in the current per-environment configuration.
+The `staging` environment follows the same pattern. State keys, IAM access entries, and tag values differ per environment. See [docs/production-setup.md](docs/production-setup.md) for the full production runbook — prerequisites, the deployment approval gate, and the dev → staging → production promotion flow.
 
 ## CI/CD
 
@@ -135,7 +139,7 @@ Three GitHub Actions workflows operate on `.tf` changes:
 |---|---|---|
 | `terraform-validation.yml` | PRs and pushes touching `.tf`/`.tfvars` | `terraform fmt` + `terraform validate` (dev) |
 | `terraform-pr.yml` | Pull requests touching environments/modules | fmt + validate per environment, Trivy IaC scan (HIGH/CRITICAL), `terraform plan` with an inline PR comment |
-| `terraform-apply.yml` | Push to `main` touching environments/modules (or `workflow_dispatch`) | detects changed environments, plans, uploads the plan artifact, and applies it |
+| `terraform-apply.yml` | Push to `main` touching environments/modules (or `workflow_dispatch`) | detects changed environments, plans, uploads the plan artifact, and applies it — gated per environment by GitHub environment protection rules |
 
 ### One-time OIDC setup for GitHub Actions
 
@@ -214,10 +218,7 @@ The platform ships with Argo CD already installed (internal NLB, IRSA provisione
 - Access Argo CD via `kubectl port-forward svc/argocd-server -n argocd 8080:443` and log in with the admin password above.
 - Add AWS Secrets Manager / SSM parameter secrets via External Secrets Operator.
 
-## Notes
+## Documentation
 
-Known inconsistencies worth cleaning up (they don't affect CI runs, which override the backend key per environment, but they will affect local runs and future additions):
-
-- `environments/production/backend.tf` uses the same state key (`dev/eks-foundation.tfstate`) as dev and carries a stale `# environments/dev/backend.tf` comment. CI overrides the key to `<env>/terraform.tfstate`, but running Terraform locally against `production` will collide with dev state until the key is changed.
-- The workflows reference environment directories that don't match the repo: `terraform-apply.yml` filters on `environments/prod/**` (the directory is `production`) and `terraform-pr.yml` includes a `staging` environment in its matrix (the directory is empty and untracked). `staging/` exists on disk but has no Terraform files in git.
-- `argocd_irsa_role_arn` is declared as a variable in both environments but is unused — the add-ons module receives `module.iam.argocd_irsa_role_arn` directly.
+- [docs/ci-cd.md](docs/ci-cd.md) — pipeline runbook: PR evidence → controlled apply, workflow sequencing, local reproduction, required repository configuration.
+- [docs/production-setup.md](docs/production-setup.md) — production runbook: prerequisites, initial deployment, the GitHub environment approval gate, and the dev → staging → production promotion flow.
