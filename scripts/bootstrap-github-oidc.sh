@@ -59,11 +59,7 @@ cat > "${TRUST_POLICY_FILE}" <<EOF
           "${OIDC_URL}:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "${OIDC_URL}:sub": [
-            "repo:${GITHUB_ORG}*/${GITHUB_REPO}*:pull_request",
-            "repo:${GITHUB_ORG}*/${GITHUB_REPO}*:ref:refs/heads/*",
-            "repo:${GITHUB_ORG}*/${GITHUB_REPO}*:ref:refs/tags/*"
-          ]
+          "${OIDC_URL}:sub": "repo:${GITHUB_ORG}/${GITHUB_REPO}:*"
         }
       }
     }
