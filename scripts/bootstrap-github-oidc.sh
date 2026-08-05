@@ -72,8 +72,13 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Trust policy (identical per env -- see header comment for why)
 # ---------------------------------------------------------------------------
-# Wildcarded sub tolerates GitHub's immutable-ID format and covers push,
-# pull_request, and workflow_dispatch triggers alike.
+# Wildcarded sub tolerates GitHub's immutable-ID format AND the legacy format,
+# covering push, pull_request, and workflow_dispatch triggers alike.
+#
+# GitHub's current OIDC `sub` claim includes the org & repo database IDs, e.g.:
+#   repo:jaybeedevx@201910675/platform-infrastructure@1308759777:ref:refs/heads/main
+# The `@*` wildcard matches those IDs. Both the plain and ID-qualified
+# patterns are listed so the policy works regardless of GitHub's token format.
 write_trust_policy() {
   local file="$1"
   cat > "${file}" <<EOF
@@ -91,7 +96,10 @@ write_trust_policy() {
           "${OIDC_URL}:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "${OIDC_URL}:sub": "repo:${GITHUB_ORG}/${GITHUB_REPO}:*"
+          "${OIDC_URL}:sub": [
+            "repo:${GITHUB_ORG}/${GITHUB_REPO}:*",
+            "repo:${GITHUB_ORG}@*/${GITHUB_REPO}@*:*"
+          ]
         }
       }
     }
