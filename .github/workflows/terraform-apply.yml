@@ -65,64 +65,15 @@ jobs:
           [ "${{ steps.filter.outputs.production }}" = "true" ] && envs=$(echo "$envs" | jq -c '. + ["production"]')
           echo "environments=$envs" >> "$GITHUB_OUTPUT"
 
-  plan:
-    name: "Plan (${{ matrix.env }})"
+  # Plan and apply run in a single job per environment. This workflow fires
+  # only on push to main (or manual dispatch), gated by GitHub Environment
+  # protection rules, so the plan can be applied immediately and no artifact
+  # handoff between jobs is needed -- avoiding the fragile has_changes-output
+  # and artifact-download steps that previously silently skipped every apply.
+  deploy:
+    name: "Deploy (${{ matrix.env }})"
     needs: detect
     if: needs.detect.outputs.environments != '[]'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        env: ${{ fromJSON(needs.detect.outputs.environments) }}
-    defaults:
-      run:
-        working-directory: environments/${{ matrix.env }}
-    steps:
-      - uses: actions/checkout@v4
-      # Plan only needs to READ resources/state, so use the shared read-only
-      # role rather than the per-env deployer role.
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_OIDC_READONLY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-      - name: Init
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ matrix.env }}/terraform.tfstate" \
-            -backend-config="region=${{ env.AWS_REGION }}"
-      - name: Validate
-        run: terraform validate -no-color
-      - name: Plan
-        id: plan
-        run: |
-          set +e
-          terraform plan -no-color -input=false -out=plan.tfplan -detailed-exitcode
-          code=$?
-          set -e
-          if [ "$code" = "2" ]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          elif [ "$code" = "0" ]; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            exit 1
-          fi
-      - name: Upload plan artifact
-        if: steps.plan.outputs.has_changes == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan-${{ matrix.env }}
-          path: environments/${{ matrix.env }}/plan.tfplan
-          retention-days: 5
-
-  apply:
-    name: "Apply (${{ matrix.env }})"
-    needs: [detect, plan]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -155,32 +106,10 @@ jobs:
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -backend-config="key=${{ matrix.env }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
-      # if-no-files-found: ignore -- the plan is only uploaded when there are
-      # changes, so this is a normal case, not an error.
-      - name: Download plan artifact
-        id: download
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-${{ matrix.env }}
-          path: environments/${{ matrix.env }}
-          if-no-files-found: ignore
-      # Working directory is already environments/<env>, and download-artifact
-      # (a `uses` step) placed the file at <env>/plan.tfplan relative to the
-      # workspace root -- so from here it is just plan.tfplan. Previously this
-      # tested environments/<env>/plan.tfplan (double-nested), which was always
-      # absent and silently skipped every apply.
-      - name: Check if plan exists
-        id: check
-        run: |
-          if [ -f plan.tfplan ]; then
-            echo "plan_exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "plan_exists=false" >> "$GITHUB_OUTPUT"
-            echo "No changes for ${{ matrix.env }} -- skipping apply."
-          fi
+      - name: Plan
+        run: terraform plan -no-color -input=false -out=plan.tfplan
       - name: Apply
-        if: steps.check.outputs.plan_exists == 'true'
-        run: terraform apply -input=false -auto-approve plan.tfplan
+        run: terraform apply -no-color -input=false -auto-approve plan.tfplan
       - name: Summarize
         if: always()
         run: |
