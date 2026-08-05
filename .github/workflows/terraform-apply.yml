@@ -79,10 +79,12 @@ jobs:
         working-directory: environments/${{ matrix.env }}
     steps:
       - uses: actions/checkout@v4
+      # Plan only needs to READ resources/state, so use the shared read-only
+      # role rather than the per-env deployer role.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
+          role-to-assume: ${{ vars.AWS_OIDC_READONLY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -136,6 +138,8 @@ jobs:
         working-directory: environments/${{ matrix.env }}
     steps:
       - uses: actions/checkout@v4
+      # Runs under `environment: ${{ matrix.env }}` above, so this variable
+      # resolves to the per-environment deployer role (env-scoped variable).
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
