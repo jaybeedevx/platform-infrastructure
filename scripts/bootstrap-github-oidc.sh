@@ -168,8 +168,8 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
             "Effect": "Allow",
             "Action": [
                 "ec2:Describe*",
-                "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:ModifyVpc",
-                "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:ModifySubnet",
+                "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:ModifyVpc", "ec2:ModifyVpcAttribute",
+                "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:ModifySubnet", "ec2:ModifySubnetAttribute",
                 "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway",
                 "ec2:CreateNatGateway", "ec2:DeleteNatGateway",
                 "ec2:CreateRouteTable", "ec2:DeleteRouteTable",
@@ -180,10 +180,14 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
                 "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress",
                 "ec2:AllocateAddress", "ec2:ReleaseAddress",
                 "ec2:AssociateAddress", "ec2:DisassociateAddress",
-                "ec2:RunInstances", "ec2:TerminateInstances",
+                "ec2:RunInstances", "ec2:TerminateInstances", "ec2:ModifyInstanceAttribute",
                 "ec2:CreateLaunchTemplate", "ec2:DeleteLaunchTemplate", "ec2:ModifyLaunchTemplate",
+                "ec2:CreateLaunchTemplateVersion", "ec2:DeleteLaunchTemplateVersions",
                 "ec2:CreateVolume", "ec2:DeleteVolume", "ec2:AttachVolume", "ec2:DetachVolume",
                 "ec2:CreateKeyPair", "ec2:DeleteKeyPair",
+                "ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface",
+                "ec2:ModifyNetworkInterfaceAttribute", "ec2:ResetNetworkInterfaceAttribute",
+                "ec2:CreateVpcEndpoint", "ec2:DeleteVpcEndpoint", "ec2:ModifyVpcEndpoint",
                 "ec2:CreateFlowLogs", "ec2:DeleteFlowLogs",
                 "ec2:CreateTags", "ec2:DeleteTags"
             ],
@@ -207,7 +211,9 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
                 "kms:CreateKey", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion",
                 "kms:DescribeKey", "kms:EnableKey", "kms:DisableKey", "kms:ListKeys",
                 "kms:GetKeyPolicy", "kms:PutKeyPolicy",
-                "kms:TagResource", "kms:UntagResource"
+                "kms:TagResource", "kms:UntagResource",
+                "kms:CreateAlias", "kms:UpdateAlias", "kms:DeleteAlias", "kms:ListAliases",
+                "kms:EnableKeyRotation", "kms:DisableKeyRotation", "kms:GetKeyRotationStatus"
             ],
             "Resource": "*"
         },
@@ -216,13 +222,15 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
             "Effect": "Allow",
             "Action": [
                 "iam:GetRole", "iam:ListRoles",
-                "iam:CreateRole", "iam:DeleteRole", "iam:UpdateRole", "iam:TagRole", "iam:UntagRole",
+                "iam:CreateRole", "iam:DeleteRole", "iam:UpdateRole", "iam:TagRole", "iam:UntagRole", "iam:ListRoleTags",
                 "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy", "iam:ListRolePolicies",
                 "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListAttachedRolePolicies",
-                "iam:CreatePolicy", "iam:DeletePolicy", "iam:GetPolicy",
-                "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:GetPolicyVersion", "iam:ListPolicies",
+                "iam:CreatePolicy", "iam:DeletePolicy", "iam:GetPolicy", "iam:ListPolicies",
+                "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:GetPolicyVersion", "iam:ListPolicyVersions",
+                "iam:TagPolicy", "iam:UntagPolicy", "iam:ListPolicyTags",
                 "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile", "iam:GetInstanceProfile",
-                "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile", "iam:ListInstanceProfiles"
+                "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile", "iam:ListInstanceProfiles",
+                "iam:TagInstanceProfile", "iam:UntagInstanceProfile", "iam:ListInstanceProfileTags"
             ],
             "Resource": "*"
         },
@@ -240,7 +248,9 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
             "Effect": "Allow",
             "Action": [
                 "iam:CreateOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider",
-                "iam:UpdateOpenIDConnectProviderThumbprint", "iam:GetOpenIDConnectProvider"
+                "iam:UpdateOpenIDConnectProviderThumbprint", "iam:GetOpenIDConnectProvider",
+                "iam:TagOpenIDConnectProvider", "iam:UntagOpenIDConnectProvider",
+                "iam:ListOpenIDConnectProviderTags"
             ],
             "Resource": "*"
         },
@@ -256,7 +266,11 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
         {
             "Sid": "CloudWatchLogsControlPlane",
             "Effect": "Allow",
-            "Action": ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:DescribeLogGroups"],
+            "Action": [
+                "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy",
+                "logs:DescribeLogGroups", "logs:ListLogGroups",
+                "logs:ListTagsForResource", "logs:TagResource", "logs:UntagResource"
+            ],
             "Resource": "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:*"
         }
     ]
