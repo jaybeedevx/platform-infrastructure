@@ -155,17 +155,24 @@ jobs:
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -backend-config="key=${{ matrix.env }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
+      # if-no-files-found: ignore -- the plan is only uploaded when there are
+      # changes, so this is a normal case, not an error.
       - name: Download plan artifact
         id: download
         uses: actions/download-artifact@v4
         with:
           name: tfplan-${{ matrix.env }}
           path: environments/${{ matrix.env }}
-        continue-on-error: true
+          if-no-files-found: ignore
+      # Working directory is already environments/<env>, and download-artifact
+      # (a `uses` step) placed the file at <env>/plan.tfplan relative to the
+      # workspace root -- so from here it is just plan.tfplan. Previously this
+      # tested environments/<env>/plan.tfplan (double-nested), which was always
+      # absent and silently skipped every apply.
       - name: Check if plan exists
         id: check
         run: |
-          if [ -f environments/${{ matrix.env }}/plan.tfplan ]; then
+          if [ -f plan.tfplan ]; then
             echo "plan_exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "plan_exists=false" >> "$GITHUB_OUTPUT"
