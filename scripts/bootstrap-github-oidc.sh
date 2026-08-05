@@ -132,8 +132,12 @@ rm -f "${TRUST_POLICY_FILE}"
 
 # ---------------------------------------------------------------------------
 # 4. Inline policy: Terraform state + the EKS/VPC/IAM resources this env
-#    provisions. Scoped per environment: state is limited to the env's own
-#    key, PassRole to the cluster/IRSA role prefixes.
+#    provisions. Scoped per environment: object access is limited to the
+#    env's own state key, and PassRole to the cluster/IRSA role prefixes.
+#    ListBucket is intentionally bucket-wide: terraform init lists the bucket
+#    ROOT (not the env prefix) to discover workspaces, so an s3:prefix
+#    condition there breaks init. ListBucket only exposes key names, not
+#    contents -- the env isolation comes from the object-level statements.
 # ---------------------------------------------------------------------------
 INLINE_POLICY_NAME="terraform-deployer"
 INLINE_POLICY_FILE="$(mktemp)"
@@ -145,12 +149,7 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
             "Sid": "TerraformStateList",
             "Effect": "Allow",
             "Action": ["s3:ListBucket"],
-            "Resource": "arn:aws:s3:::${STATE_BUCKET}",
-            "Condition": {
-                "StringLike": {
-                    "s3:prefix": ["${ENV}/*"]
-                }
-            }
+            "Resource": "arn:aws:s3:::${STATE_BUCKET}"
         },
         {
             "Sid": "TerraformStateObjects",
