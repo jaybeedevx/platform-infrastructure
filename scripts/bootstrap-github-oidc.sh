@@ -262,7 +262,9 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
             "Action": "iam:CreateServiceLinkedRole",
             "Resource": [
                 "arn:aws:iam::*:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling",
-                "arn:aws:iam::*:role/aws-service-role/vpc-flow-logs.amazonaws.com/AWSServiceRoleForVPCFlowLogs"
+                "arn:aws:iam::*:role/aws-service-role/vpc-flow-logs.amazonaws.com/AWSServiceRoleForVPCFlowLogs",
+                "arn:aws:iam::*:role/aws-service-role/eks.amazonaws.com/AWSServiceRoleForAmazonEKS",
+                "arn:aws:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
             ]
         },
         {
