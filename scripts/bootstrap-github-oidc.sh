@@ -237,11 +237,12 @@ cat > "${INLINE_POLICY_FILE}" <<EOF
             "Resource": "*"
         },
         {
-            "Sid": "IamPassRoleClusterAndIrsa",
+            "Sid": "IamPassRoleClusterNodeGroupAndIrsa",
             "Effect": "Allow",
             "Action": "iam:PassRole",
             "Resource": [
                 "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-*",
+                "arn:aws:iam::${AWS_ACCOUNT_ID}:role/*-eks-node-group-*",
                 "arn:aws:iam::${AWS_ACCOUNT_ID}:role/irsa-*"
             ]
         },
