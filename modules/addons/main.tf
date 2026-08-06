@@ -59,6 +59,8 @@ resource "helm_release" "aws_ebs_csi_driver" {
     name  = "controller.replicaCount"
     value = "1"
   }
+
+  depends_on = [helm_release.aws_load_balancer_controller]
 }
 
 resource "helm_release" "aws_efs_csi_driver" {
@@ -87,6 +89,8 @@ resource "helm_release" "aws_efs_csi_driver" {
     name  = "replicaCount"
     value = "1"
   }
+
+  depends_on = [helm_release.aws_load_balancer_controller]
 }
 
 # 1. Metrics Server
@@ -96,6 +100,8 @@ resource "helm_release" "metrics_server" {
   chart      = "metrics-server"
   repository = "https://kubernetes-sigs.github.io/metrics-server/"
   version    = "3.12.0"
+
+  depends_on = [helm_release.aws_load_balancer_controller]
 }
 
 # 2. Cert-Manager
@@ -110,6 +116,13 @@ resource "helm_release" "cert_manager" {
     name  = "installCRDs"
     value = "true"
   }
+
+  # The AWS Load Balancer Controller registers a mutating webhook that
+  # intercepts every Service create/update. cert-manager creates Services
+  # (its webhook + main service), so it must install only after the
+  # controller's webhook is serving -- otherwise Service creation is rejected
+  # with "no endpoints available for service aws-load-balancer-webhook-service".
+  depends_on = [helm_release.aws_load_balancer_controller]
 }
 
 # 3. External Secrets Operator (with IRSA)
@@ -169,6 +182,9 @@ resource "helm_release" "argocd" {
   namespace        = "argocd"
   create_namespace = true
   version          = "10.2.1"
+
+  depends_on = [helm_release.aws_load_balancer_controller]
+
 
   values = [yamlencode({
 
